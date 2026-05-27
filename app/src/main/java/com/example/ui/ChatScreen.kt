@@ -37,10 +37,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +60,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Attachment
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
@@ -64,12 +68,16 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import com.example.update.UpdateInfo
+import com.example.update.UpdateManager
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -300,12 +308,29 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
         }
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateInfoState by remember { mutableStateOf<UpdateInfo?>(null) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    val updateManager = remember { UpdateManager(context) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         MeshBackground()
         
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
+                val geminiGradient = remember {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF4285F4),
+                            Color(0xFF9B72CB),
+                            Color(0xFFD96570),
+                            Color(0xFFF9AB00)
+                        )
+                    )
+                }
+
                 CenterAlignedTopAppBar(
                     navigationIcon = {
                         Box {
@@ -315,8 +340,24 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                                     .padding(start = 8.dp)
                                     .clickable { showSettingsMenu = true }
                             ) {
-                                Icon(Icons.Default.Settings, contentDescription = if (language == "العربية") "الإعدادات" else "Settings", tint = Slate400)
-                                Text(if (language == "العربية") "الإعدادات" else "Settings", style = MaterialTheme.typography.labelSmall, color = Slate400, fontSize = 10.sp)
+                                Icon(
+                                    Icons.Default.Settings, 
+                                    contentDescription = if (language == "العربية") "الإعدادات" else "Settings", 
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .graphicsLayer(alpha = 0.99f)
+                                        .drawWithCache {
+                                            val brush = Brush.linearGradient(listOf(Color(0xFFEAECEF), Color(0xFF7D838F)))
+                                            onDrawWithContent {
+                                                drawContent()
+                                                drawRect(brush, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
+                                            }
+                                        }
+                                        .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(if (language == "العربية") "الإعدادات" else "Settings", style = MaterialTheme.typography.labelSmall, color = Slate100, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             DropdownMenu(
                                 expanded = showSettingsMenu,
@@ -349,11 +390,46 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                                         }
                                     )
                                 }
+                                
+                                val updateLabel = if (language == "العربية") "التحقق من التحديثات" else "Check for Updates"
+                                DropdownMenuItem(
+                                    text = { Text(if (isCheckingUpdate) "..." else updateLabel, color = Slate100) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Sync, contentDescription = "Check for Updates", tint = Slate100)
+                                    },
+                                    onClick = {
+                                        if (isCheckingUpdate) return@DropdownMenuItem
+                                        isCheckingUpdate = true
+                                        showSettingsMenu = false
+                                        coroutineScope.launch {
+                                            val info = updateManager.checkForUpdate()
+                                            isCheckingUpdate = false
+                                            if (info != null && info.hasUpdate) {
+                                                updateInfoState = info
+                                                showUpdateDialog = true
+                                            } else {
+                                                android.widget.Toast.makeText(context, if (language == "العربية") "أنت على أحدث إصدار." else "You are on the latest version.", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                )
                             }
                         }
                     },
                     title = { 
-                        Text("GMANOOY Pro", fontWeight = FontWeight.Medium, color = Slate100)
+                        Text(
+                            text = "GMANOOY", 
+                            fontWeight = FontWeight.Black, 
+                            fontSize = 28.sp,
+                            style = androidx.compose.ui.text.TextStyle(
+                                brush = geminiGradient,
+                                shadow = androidx.compose.ui.graphics.Shadow(
+                                    color = Color(0x80000000),
+                                    offset = Offset(4f, 6f),
+                                    blurRadius = 8f
+                                )
+                            )
+                        )
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = Color.Transparent,
@@ -365,13 +441,24 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                                 .padding(end = 8.dp)
                                 .clickable { viewModel.clearChat() }
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.MailOutline,
-                                contentDescription = if (language == "العربية") "محادثة جديدة" else "New Chat",
-                                tint = Slate400,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(if (language == "العربية") "محادثة جديدة" else "New Chat", style = MaterialTheme.typography.labelSmall, color = Slate400, fontSize = 8.sp)
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = if (language == "العربية") "محادثة جديدة" else "New Chat",
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .graphicsLayer(alpha = 0.99f)
+                                        .drawWithCache {
+                                            val brush = Brush.linearGradient(listOf(Color(0xFF64B5F6), Color(0xFF0D47A1)))
+                                            onDrawWithContent {
+                                                drawContent()
+                                                drawRect(brush, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
+                                            }
+                                        }
+                                        .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(if (language == "العربية") "محادثة جديدة" else "New Chat", style = MaterialTheme.typography.labelSmall, color = Slate100, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         if (isCameraActive) {
                             IconButton(
@@ -614,6 +701,31 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                     }
                 }
             }
+        }
+
+        if (showUpdateDialog && updateInfoState != null) {
+            val uiInfo = updateInfoState!!
+            AlertDialog(
+                onDismissRequest = { showUpdateDialog = false },
+                title = { Text(if (language == "العربية") "تحديث جديد متاح" else "New Update Available", color = Slate100) },
+                text = { Text(if (language == "العربية") "هل ترغب في تنزيل وتثبيت التحديث الجديد المستند إلى التاريخ: ${uiInfo.publishedAt}؟" else "Would you like to download and install the new update published at: ${uiInfo.publishedAt}?", color = Slate400) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showUpdateDialog = false
+                        updateManager.downloadAndInstall(uiInfo)
+                    }) {
+                        Text(if (language == "العربية") "تنزيل الآن" else "Download Now", color = Cyan500)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text(if (language == "العربية") "لاحقاً" else "Later", color = Slate400)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Slate100,
+                textContentColor = Slate400
+            )
         }
     }
 }

@@ -19,7 +19,7 @@ import java.net.URL
 
 data class UpdateInfo(
     val hasUpdate: Boolean,
-    val latestVersion: String,
+    val publishedAt: String,
     val downloadUrl: String
 )
 
@@ -28,6 +28,7 @@ class UpdateManager(private val context: Context) {
     // IMPORTANT: Replace with your actual GitHub Owner and Public Repo Names
     private val githubOwner = "YOUR_GITHUB_OWNER"
     private val githubRepo = "YOUR_PUBLIC_REPO_NAME"
+    private val prefs = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
@@ -42,7 +43,7 @@ class UpdateManager(private val context: Context) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 val jsonObject = JSONObject(response)
                 
-                val tagName = jsonObject.getString("tag_name")
+                val publishedAt = jsonObject.getString("published_at")
                 val assets = jsonObject.getJSONArray("assets")
                 
                 var downloadUrl = ""
@@ -56,10 +57,9 @@ class UpdateManager(private val context: Context) {
                 }
                 
                 if (downloadUrl.isNotEmpty()) {
-                    val currentVersion = BuildConfig.VERSION_NAME
-                    if (isNewerVersion(tagName, currentVersion)) {
-                        return@withContext UpdateInfo(true, tagName, downloadUrl)
-                    }
+                    val localTimestamp = prefs.getString("last_update_timestamp", "") ?: ""
+                    val isNewer = localTimestamp.isEmpty() || publishedAt > localTimestamp
+                    return@withContext UpdateInfo(isNewer, publishedAt, downloadUrl)
                 }
             }
         } catch (e: Exception) {
@@ -68,46 +68,17 @@ class UpdateManager(private val context: Context) {
         return@withContext null
     }
 
-    private fun isNewerVersion(latest: String, current: String): Boolean {
-        if (current.isBlank()) return true // default case if VERSION_NAME is empty
-
-        val cleanLatest = latest.removePrefix("v").trim()
-        val cleanCurrent = current.removePrefix("v").trim()
-        
-        val latestParts = cleanLatest.split(".")
-        val currentParts = cleanCurrent.split(".")
-
-        val maxLength = maxOf(latestParts.size, currentParts.size)
-        
-        for (i in 0 until maxLength) {
-            val l = latestParts.getOrNull(i)?.toIntOrNull() ?: 0
-            val c = currentParts.getOrNull(i)?.toIntOrNull() ?: 0
-            if (l > c) return true
-            if (l < c) return false
-        }
-        return false
-    }
-
     fun downloadAndInstall(updateInfo: UpdateInfo) {
         val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val uri = Uri.parse(updateInfo.downloadUrl)
         
-        val apkFileName = "update_${updateInfo.latestVersion}.apk"
-        val destinationDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        if (destinationDir != null && !destinationDir.exists()) {
-            destinationDir.mkdirs()
-        }
-        val destinationFile = File(destinationDir, apkFileName)
+        val apkFileName = "update_${System.currentTimeMillis()}.apk"
         
-        if (destinationFile.exists()) {
-            destinationFile.delete()
-        }
-
         val request = DownloadManager.Request(uri)
             .setTitle("Downloading Update")
-            .setDescription("Downloading version ${updateInfo.latestVersion}")
+            .setDescription("Downloading latest release")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationUri(Uri.fromFile(destinationFile))
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, apkFileName)
 
         val downloadId = downloadManager.enqueue(request)
 
@@ -116,7 +87,7 @@ class UpdateManager(private val context: Context) {
                 val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
                 if (id == downloadId) {
                     if (context != null) {
-                        installApk(context, destinationFile)
+                        installApk(context, downloadId, downloadManager, updateInfo.publishedAt)
                         try {
                             context.unregisterReceiver(this)
                         } catch (e: Exception) {}
@@ -132,21 +103,20 @@ class UpdateManager(private val context: Context) {
         }
     }
 
-    private fun installApk(context: Context, apkFile: File) {
+    private fun installApk(context: Context, downloadId: Long, downloadManager: DownloadManager, publishedAt: String) {
         try {
-            val contentUri = FileProvider.getUriForFile(
-                context,
-                "${BuildConfig.APPLICATION_ID}.fileprovider",
-                apkFile
-            )
-            
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(contentUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val contentUri = downloadManager.getUriForDownloadedFile(downloadId)
+            if (contentUri != null) {
+                // Update the local timestamp
+                prefs.edit().putString("last_update_timestamp", publishedAt).apply()
+                
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(contentUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(installIntent)
             }
-            
-            context.startActivity(installIntent)
         } catch (e: Exception) {
             e.printStackTrace()
         }

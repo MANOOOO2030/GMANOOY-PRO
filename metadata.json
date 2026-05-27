@@ -1,5 +1,5 @@
 {
-  "name": "GMANOOY Pro",
+  "name": "GMANOOY",
   "description": "روبوت محادثة مدعوم بالذكاء الاصطناعي مع البحث وبث الصوت المباشر والكاميرا.",
   "requestFramePermissions": [
     "microphone"
