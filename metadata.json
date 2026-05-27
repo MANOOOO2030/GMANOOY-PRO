@@ -1,0 +1,8 @@
+{
+  "name": "GMANOOY Pro",
+  "description": "روبوت محادثة مدعوم بالذكاء الاصطناعي مع البحث وبث الصوت المباشر والكاميرا.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
