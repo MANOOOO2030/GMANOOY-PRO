@@ -16,9 +16,15 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
-      MyApplicationTheme {
-         val context = LocalContext.current
-         val authManager = remember { AuthManager(context) }
+      val context = LocalContext.current
+      val authManager = remember { AuthManager(context) }
+      var isDarkTheme by remember { mutableStateOf(authManager.isDarkTheme) }
+
+      // We pass the setter down if needed, but the ChatScreen ViewModel can also handle updating this or we inject a callback down.
+      // Easiest is to pass through a composition local, or let ChatScreen update AuthManager and then notify.
+      // Let's just create a quick flow/callback so it updates immediately.
+      
+      MyApplicationTheme(isDarkTheme = isDarkTheme) {
          
          // We do not have a persistent skipped state besides isGuestMode.
          // Let's assume if they don't have token and guest mode is false, show login.
@@ -38,8 +44,9 @@ class MainActivity : ComponentActivity() {
          
          if (currentScreen == "login") {
              LoginScreen(
-                 onLoginSuccess = { token ->
+                 onLoginSuccess = { token, email ->
                      authManager.googleOAuthToken = token
+                     authManager.googleUserEmail = email
                      authManager.isGuestMode = false
                      currentScreen = "chat"
                  },
@@ -56,6 +63,10 @@ class MainActivity : ComponentActivity() {
                      authManager.googleOAuthToken = null
                      authManager.isGuestMode = false // force login screen since it's the "none" state
                      currentScreen = "login"
+                 },
+                 onThemeChange = { dark -> 
+                     isDarkTheme = dark
+                     authManager.isDarkTheme = dark
                  }
              )
          }

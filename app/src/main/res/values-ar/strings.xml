@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GMANOOY</string>
+    <string name="sign_out_back">تسجيل الخروج</string>
+    <string name="trial_period_ended">انتهت الفترة التجريبية</string>
+    <string name="trial_period_ended_body">انتهت الفترة التجريبية. يرجى تسجيل الدخول بحساب Google الخاص بك لمتابعة استخدام الميزات المتقدمة.</string>
+    <string name="sign_in">تسجيل الدخول</string>
+    <string name="later">لاحقاً</string>
+    <string name="welcome_to_gmanoooy">مرحباً بك في GMANOOY</string>
+    <string name="login_body">رفيقك الذكي الذي يتكيف مع أسلوبك. قم بتسجيل الدخول لحفظ استفساراتك والوصول إلى كافة الميزات عبر أجهزتك.</string>
+    <string name="sign_in_with_google">تسجيل الدخول باستخدام Google</string>
+    <string name="continue_as_guest">المتابعة كضيف</string>
+    <string name="factory_reset">إعادة ضبط المصنع</string>
+</resources>

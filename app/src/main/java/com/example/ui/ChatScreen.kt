@@ -37,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -46,8 +47,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.R
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -81,7 +84,14 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}) {
+fun ChatScreen(
+    viewModel: ChatViewModel = viewModel(), 
+    onLogout: () -> Unit = {},
+    onThemeChange: (Boolean) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val authManager = remember(context) { com.example.auth.AuthManager(context) }
+    var isDarkTheme by remember { mutableStateOf(authManager.isDarkTheme) }
     val messages by viewModel.messages.collectAsState()
     val isLiveAudioActive by viewModel.isLiveAudioActive.collectAsState()
     val isCameraActive by viewModel.isCameraActive.collectAsState()
@@ -90,8 +100,11 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
     var inputText by remember { mutableStateOf("") }
     var isBackCamera by remember { mutableStateOf(true) }
     var showSettingsMenu by remember { mutableStateOf(false) }
-    
-    val context = LocalContext.current
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var showVoiceDialog by remember { mutableStateOf(false) }
+    val isDark = isDarkTheme
+    val glassBgColor = if (isDark) GlassBg else Color(0x0F000000)
+    val glassBorderColor = if (isDark) GlassBorder else Color(0x11000000)
     
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -224,13 +237,20 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
         }
     }
 
-    val permissionsState = rememberMultiplePermissionsState(
-        permissions = listOf(
+    val permissionsList = remember {
+        val list = mutableListOf(
             Manifest.permission.RECORD_AUDIO, 
-            Manifest.permission.CAMERA,
-            Manifest.permission.READ_MEDIA_IMAGES
+            Manifest.permission.CAMERA
         )
-    )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            list.add(Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            list.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        list
+    }
+
+    val permissionsState = rememberMultiplePermissionsState(permissions = permissionsList)
     val allGranted = permissionsState.allPermissionsGranted
 
     // Text To Speech
@@ -238,7 +258,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
         var textToSpeech: TextToSpeech? = null
         textToSpeech = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                textToSpeech?.language = Locale.getDefault()
+                textToSpeech?.language = java.util.Locale.getDefault()
             }
         }
         textToSpeech
@@ -266,7 +286,22 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                     override fun onRmsChanged(rmsdB: Float) {}
                     override fun onBufferReceived(buffer: ByteArray?) {}
                     override fun onEndOfSpeech() {}
-                    override fun onError(error: Int) { isListening = false }
+                    override fun onError(error: Int) { 
+                        isListening = false 
+                        val errMsg = when(error) {
+                            SpeechRecognizer.ERROR_AUDIO -> if (language == "العربية") "خطأ في تسجيل الصوت" else "Audio recording error"
+                            SpeechRecognizer.ERROR_CLIENT -> if (language == "العربية") "خطأ من العميل" else "Client side error"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> if (language == "العربية") "الصلاحيات غير كافية" else "Insufficient permissions"
+                            SpeechRecognizer.ERROR_NETWORK -> if (language == "العربية") "خطأ في الاتصال بالشبكة" else "Network error"
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> if (language == "العربية") "انتهت مهلة الشبكة" else "Network timeout"
+                            SpeechRecognizer.ERROR_NO_MATCH -> if (language == "العربية") "لم يتم العرف على الصوت، جرب مجدداً" else "No speech match"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> if (language == "العربية") "جهاز التعرف على الصوت مشغول" else "Speech recognition service busy"
+                            SpeechRecognizer.ERROR_SERVER -> if (language == "العربية") "خطأ من خادم جوجل" else "Google server error"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (language == "العربية") "انتهت مهلة التحدث دون التقاط صوت" else "Speech input timeout"
+                            else -> if (language == "العربية") "خطأ غير معروف في التعرف على الصوت" else "Unknown speech recognition error"
+                        }
+                        android.widget.Toast.makeText(context, errMsg, android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     override fun onResults(results: Bundle?) {
                         isListening = false
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -300,10 +335,13 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
         }
     }
 
-    val speechIntent = remember {
+    val speechIntent = remember(language) {
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            val langTag = if (language == "العربية") "ar-SA" else "en-US"
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, langTag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, langTag)
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, langTag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
     }
@@ -351,12 +389,16 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                 Icon(
                                     Icons.Default.Settings, 
                                     contentDescription = if (language == "العربية") "الإعدادات" else "Settings", 
-                                    tint = Color.White,
+                                    tint = if (isDarkTheme) Color.White else Color.Black,
                                     modifier = Modifier
                                         .size(28.dp)
                                         .graphicsLayer(alpha = 0.99f)
                                         .drawWithCache {
-                                            val brush = Brush.linearGradient(listOf(Color(0xFFEAECEF), Color(0xFF7D838F)))
+                                            val brush = if (isDarkTheme) {
+                                                Brush.linearGradient(listOf(Color(0xFFEAECEF), Color(0xFF7D838F)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color(0xFF1E293B), Color(0xFF475569)))
+                                            }
                                             onDrawWithContent {
                                                 drawContent()
                                                 drawRect(brush, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
@@ -365,46 +407,85 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                         .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                                 )
                                 Spacer(Modifier.height(4.dp))
-                                Text(if (language == "العربية") "الإعدادات" else "Settings", style = MaterialTheme.typography.labelSmall, color = Slate100, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (language == "العربية") "الإعدادات" else "Settings", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             DropdownMenu(
                                 expanded = showSettingsMenu,
                                 onDismissRequest = { showSettingsMenu = false },
-                                modifier = Modifier.background(GlassBg)
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .padding(horizontal = 8.dp)
                             ) {
-                                val languages = listOf("العربية", "English")
+                                // 1. Dark Mode Toggle
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(if (language == "العربية") "الوضع الداكن" else "Dark Mode", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                                    Switch(
+                                        checked = isDarkTheme,
+                                        onCheckedChange = { 
+                                            isDarkTheme = it 
+                                            onThemeChange(it)
+                                        },
+                                        modifier = Modifier.scale(0.8f)
+                                    )
+                                }
+                                
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
+
+                                // 2. Language Dropdown
+                                Text(if (language == "العربية") "اللغة" else "Language", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                                val languages = listOf("System Default (Auto)", "English", "العربية", "French")
                                 languages.forEach { lang ->
+                                    val isSelected = language == lang || (language == "Arabic" && lang == "العربية") || (lang == "System Default (Auto)" && !languages.contains(language) && language != "Arabic")
                                     DropdownMenuItem(
-                                        text = { Text(if (language == "العربية") "اللغة: $lang" else "Language: $lang", color = if (language == lang) Cyan500 else Slate100) },
+                                        text = { Text(lang, color = if (isSelected) Cyan500 else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(36.dp),
                                         onClick = {
-                                            viewModel.language.value = lang
+                                            viewModel.language.value = if (lang == "System Default (Auto)") {
+                                                if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
+                                            } else {
+                                                lang
+                                            }
+                                            authManager.language = lang
                                             showSettingsMenu = false
                                         }
                                     )
                                 }
-                                val voices = listOf(
-                                    "Aoede" to "امرأة (Aoede)",
-                                    "Kore" to "فتاة (Kore)",
-                                    "Charon" to "رجل (Charon)",
-                                    "Fenrir" to "شاب (Fenrir)",
-                                    "Puck" to "طفل (Puck)"
-                                )
-                                voices.forEach { (voiceId, voiceDesc) ->
+
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
+
+                                // 3. Premium Voice Selection
+                                Text(if (language == "العربية") "الصوت المميز" else "Premium Voice", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                                val voices = listOf("Aoede", "Charon", "Fenrir", "Kore", "Puck")
+                                voices.forEach { voiceId ->
                                     DropdownMenuItem(
-                                        text = { Text(if (language == "العربية") "الصوت: $voiceDesc" else "Voice: $voiceDesc", color = if (voiceName == voiceId) Emerald400 else Slate100) },
+                                        text = { Text(voiceId, color = if (voiceName == voiceId) Emerald400 else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(36.dp),
                                         onClick = {
                                             viewModel.setVoiceAndGreet(voiceId)
+                                            authManager.selectedVoice = voiceId
                                             showSettingsMenu = false
                                         }
                                     )
                                 }
                                 
+                                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
+                                
                                 val updateLabel = if (language == "العربية") "التحقق من التحديثات" else "Check for Updates"
                                 DropdownMenuItem(
-                                    text = { Text(if (isCheckingUpdate) "..." else updateLabel, color = Slate100) },
+                                    text = { Text(if (isCheckingUpdate) "..." else updateLabel, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
                                     leadingIcon = {
-                                        Icon(Icons.Default.Sync, contentDescription = "Check for Updates", tint = Slate100)
+                                        Icon(Icons.Default.Sync, contentDescription = "Check for Updates", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                                     },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(40.dp),
                                     onClick = {
                                         if (isCheckingUpdate) return@DropdownMenuItem
                                         isCheckingUpdate = true
@@ -422,10 +503,15 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                     }
                                 )
                                 
+
+                                
                                 DropdownMenuItem(
-                                    text = { Text(if (language == "العربية") "تسجيل الخروج / العودة" else "Sign Out / Back", color = Color(0xFFEF4444)) },
+                                    text = { Text(stringResource(id = R.string.sign_out_back), color = Color(0xFFEF4444), fontSize = 14.sp) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(40.dp),
                                     onClick = {
                                         showSettingsMenu = false
+                                        viewModel.clearChat()
                                         onLogout()
                                     }
                                 )
@@ -460,12 +546,16 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                 Icon(
                                     imageVector = Icons.Default.Email,
                                     contentDescription = if (language == "العربية") "محادثة جديدة" else "New Chat",
-                                    tint = Color.White,
+                                    tint = if (isDarkTheme) Color.White else Color.Black,
                                     modifier = Modifier
                                         .size(28.dp)
                                         .graphicsLayer(alpha = 0.99f)
                                         .drawWithCache {
-                                            val brush = Brush.linearGradient(listOf(Color(0xFF64B5F6), Color(0xFF0D47A1)))
+                                            val brush = if (isDarkTheme) {
+                                                Brush.linearGradient(listOf(Color(0xFF64B5F6), Color(0xFF0D47A1)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFF3B82F6)))
+                                            }
                                             onDrawWithContent {
                                                 drawContent()
                                                 drawRect(brush, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
@@ -474,7 +564,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                         .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                                 )
                                 Spacer(Modifier.height(4.dp))
-                                Text(if (language == "العربية") "محادثة جديدة" else "New Chat", style = MaterialTheme.typography.labelSmall, color = Slate100, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(if (language == "العربية") "محادثة جديدة" else "New Chat", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         if (isCameraActive) {
                             IconButton(
@@ -483,8 +573,8 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                     .padding(end = 8.dp)
                                     .size(40.dp)
                                     .clip(CircleShape)
-                                    .background(GlassBg)
-                                    .border(1.dp, GlassBorder, CircleShape)
+                                    .background(glassBgColor)
+                                    .border(1.dp, glassBorderColor, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.FlipCameraAndroid,
@@ -531,8 +621,8 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp)
-                            .background(GlassBg, RoundedCornerShape(24.dp))
-                            .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
+                            .background(glassBgColor, RoundedCornerShape(24.dp))
+                            .border(1.dp, glassBorderColor, RoundedCornerShape(24.dp))
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceEvenly
@@ -562,8 +652,8 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
 
                         IconButton(
                             onClick = {
-                                val recordAudioGranted = permissionsState.permissions.find { it.permission == Manifest.permission.RECORD_AUDIO }?.status?.isGranted == true
-                                val cameraGranted = permissionsState.permissions.find { it.permission == Manifest.permission.CAMERA }?.status?.isGranted == true
+                                val recordAudioGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                val cameraGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
                                 
                                 if (cameraGranted && recordAudioGranted) {
                                     viewModel.toggleCamera()
@@ -616,7 +706,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
 
                         IconButton(
                             onClick = {
-                                val recordAudioGranted = permissionsState.permissions.find { it.permission == Manifest.permission.RECORD_AUDIO }?.status?.isGranted == true
+                                val recordAudioGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
                                 if (recordAudioGranted) {
                                     viewModel.toggleLiveAudio()
                                 } else {
@@ -650,12 +740,12 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                             },
                             shape = CircleShape,
                             enabled = !isLiveAudioActive,
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Slate100),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                             trailingIcon = {
                                  IconButton(
                                      modifier = Modifier.size(32.dp),
                                      onClick = {
-                                     val recordAudioGranted = permissionsState.permissions.find { it.permission == Manifest.permission.RECORD_AUDIO }?.status?.isGranted == true
+                                     val recordAudioGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
                                      if (recordAudioGranted) {
                                          if (speechRecognizer != null) {
                                              if (isListening) {
@@ -682,13 +772,13 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
                                  }
                             },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = GlassBg,
-                                unfocusedContainerColor = GlassBg,
-                                focusedBorderColor = Indigo500.copy(alpha = 0.5f),
-                                unfocusedBorderColor = GlassBorder,
-                                focusedTextColor = Slate100,
-                                unfocusedTextColor = Slate100,
-                                cursorColor = Indigo500
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                cursorColor = MaterialTheme.colorScheme.primary
                             )
                         )
 
@@ -723,24 +813,24 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
             val uiInfo = updateInfoState!!
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
-                title = { Text(if (language == "العربية") "تحديث جديد متاح" else "New Update Available", color = Slate100) },
-                text = { Text(if (language == "العربية") "هل ترغب في تنزيل وتثبيت التحديث الجديد المستند إلى التاريخ: ${uiInfo.publishedAt}؟" else "Would you like to download and install the new update published at: ${uiInfo.publishedAt}?", color = Slate400) },
+                title = { Text(if (language == "العربية") "تحديث جديد متاح" else "New Update Available") },
+                text = { Text(if (language == "العربية") "هل ترغب في تنزيل وتثبيت التحديث الجديد المستند إلى التاريخ: ${uiInfo.publishedAt}؟" else "Would you like to download and install the new update published at: ${uiInfo.publishedAt}?") },
                 confirmButton = {
                     TextButton(onClick = {
                         showUpdateDialog = false
                         updateManager.downloadAndInstall(uiInfo)
                     }) {
-                        Text(if (language == "العربية") "تنزيل الآن" else "Download Now", color = Cyan500)
+                        Text(if (language == "العربية") "تنزيل الآن" else "Download Now", color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateDialog = false }) {
-                        Text(if (language == "العربية") "لاحقاً" else "Later", color = Slate400)
+                        Text(if (language == "العربية") "لاحقاً" else "Later", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                containerColor = Color(0xFF1E293B),
-                titleContentColor = Slate100,
-                textContentColor = Slate400
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         
@@ -748,24 +838,154 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
         if (showQuotaDialog) {
             AlertDialog(
                 onDismissRequest = { viewModel.showQuotaExceededDialog.value = false },
-                title = { Text("Trial Period Ended", color = Slate100) },
-                text = { Text("Trial period ended. Please sign in with your Google account to continue using advanced features.", color = Slate400) },
+                title = { Text(stringResource(id = R.string.trial_period_ended)) },
+                text = { Text(stringResource(id = R.string.trial_period_ended_body)) },
                 confirmButton = {
                     TextButton(onClick = { 
                         viewModel.showQuotaExceededDialog.value = false
+                        viewModel.clearChat()
                         onLogout()
                     }) {
-                        Text("Sign In", color = Cyan500)
+                        Text(stringResource(id = R.string.sign_in), color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { viewModel.showQuotaExceededDialog.value = false }) {
-                        Text("Later", color = Slate400)
+                        Text(stringResource(id = R.string.later), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                containerColor = Color(0xFF1E293B),
-                titleContentColor = Slate100,
-                textContentColor = Slate400
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (showLanguageDialog) {
+            val languages = listOf("System Default (Auto)", "English", "العربية", "French")
+            AlertDialog(
+                onDismissRequest = { showLanguageDialog = false },
+                title = {
+                    Text(
+                        text = if (language == "العربية") "اختر اللغة" else "Select Language",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        languages.forEach { lang ->
+                            val isSelected = language == lang || (language == "Arabic" && lang == "العربية") || (lang == "System Default (Auto)" && !languages.contains(language) && language != "Arabic")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.language.value = if (lang == "System Default (Auto)") {
+                                            if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
+                                        } else {
+                                            lang
+                                        }
+                                        authManager.language = lang
+                                        showLanguageDialog = false
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = lang,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp
+                                )
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.language.value = if (lang == "System Default (Auto)") {
+                                            if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
+                                        } else {
+                                            lang
+                                        }
+                                        authManager.language = lang
+                                        showLanguageDialog = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showLanguageDialog = false }) {
+                        Text(if (language == "العربية") "إغلاق" else "Close", color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (showVoiceDialog) {
+            val voices = listOf("Aoede", "Charon", "Fenrir", "Kore", "Puck")
+            AlertDialog(
+                onDismissRequest = { showVoiceDialog = false },
+                title = {
+                    Text(
+                        text = if (language == "العربية") "اختر الصوت المميز" else "Select Premium Voice",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        voices.forEach { voiceId ->
+                            val isSelected = voiceName == voiceId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.setVoiceAndGreet(voiceId)
+                                        authManager.selectedVoice = voiceId
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.VolumeUp,
+                                        contentDescription = "Test Audio",
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = voiceId,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.setVoiceAndGreet(voiceId)
+                                        authManager.selectedVoice = voiceId
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showVoiceDialog = false }) {
+                        Text(if (language == "العربية") "حفظ" else "Save", color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -869,7 +1089,7 @@ fun CameraPreview(
 
 @Composable
 fun MeshBackground() {
-    Canvas(modifier = Modifier.fillMaxSize().background(DarkBg)) {
+    Canvas(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val width = size.width
         val height = size.height
         drawCircle(
@@ -904,12 +1124,16 @@ fun MeshBackground() {
 
 @Composable
 fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, language: String = "العربية") {
+    val isDark = MaterialTheme.colorScheme.background == DarkBg || MaterialTheme.colorScheme.background == Color(0xFF0B0E14)
     val isUser = message.isUser
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bgColor = if (isUser) Indigo500.copy(alpha = 0.15f) else GlassBg
-    val borderColor = if (isUser) Indigo500.copy(alpha = 0.3f) else GlassBorder
-    val textColor = Slate100
-        val shape = RoundedCornerShape(24.dp)
+    val bgColor = if (isUser) Indigo500 else (if (isDark) Slate800 else Color(0xFFE2E8F0))
+    val borderColor = if (isUser) Color.Transparent else (if (isDark) GlassBorder else Color(0xFFCBD5E1))
+    val textColor = if (isUser) Color.White else (if (isDark) Color.White else Color(0xFF1E293B))
+    val shape = if (isUser) 
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 4.dp)
+    else
+        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 20.dp)
 
     Box(
         modifier = Modifier
@@ -917,15 +1141,14 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
             .padding(vertical = 4.dp),
         contentAlignment = alignment
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(min = 60.dp, max = 280.dp)
-                .clip(shape)
-                .background(bgColor)
-                .border(1.dp, borderColor, shape)
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+        Card(
+            shape = shape,
+            colors = CardDefaults.cardColors(containerColor = bgColor),
+            border = if (isUser) null else androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.widthIn(min = 60.dp, max = 290.dp)
         ) {
-            Column {
+            Column(modifier = Modifier.padding(12.dp)) {
                 if (message.base64Image != null || message.attachedBase64Image != null) {
                     val b64 = message.base64Image ?: message.attachedBase64Image
                     val isImage = message.attachedMimeType?.startsWith("image/") == true
@@ -953,7 +1176,8 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                                     options.inJustDecodeBounds = false
                                     options.inSampleSize = inSampleSize
                                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                                } catch (e: Exception) {
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
                                     null
                                 }
                             }
@@ -962,7 +1186,7 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                             Image(
                                 bitmap = bitmap!!.asImageBitmap(),
                                 contentDescription = if (language == "العربية") "صورة مرفقة" else "Attached image",
-                                modifier = Modifier.fillMaxWidth().height(160.dp).padding(bottom = 8.dp)
+                                modifier = Modifier.fillMaxWidth().height(160.dp).padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp))
                             )
                         }
                     } else if (message.attachedMimeType != null) {
@@ -995,11 +1219,21 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                     androidx.compose.ui.viewinterop.AndroidView(
                         factory = { ctx ->
                             android.widget.TextView(ctx).apply {
-                                setTextColor(android.graphics.Color.WHITE)
-                                textSize = 16f
+                                val txtColor = if (isUser) {
+                                    android.graphics.Color.WHITE
+                                } else {
+                                    if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#1E293B")
+                                }
+                                val lnkColor = if (isUser) {
+                                    android.graphics.Color.parseColor("#4DEEEA")
+                                } else {
+                                    if (isDark) android.graphics.Color.parseColor("#4DEEEA") else android.graphics.Color.parseColor("#4F46E5")
+                                }
+                                setTextColor(txtColor)
+                                textSize = 15f
                                 autoLinkMask = android.text.util.Linkify.WEB_URLS
                                 linksClickable = true
-                                setLinkTextColor(android.graphics.Color.parseColor("#06b6d4"))
+                                setLinkTextColor(lnkColor)
                                 text = cleanText
                             }
                         },
@@ -1019,10 +1253,24 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                 }
                 if (!isUser) {
                     val context = LocalContext.current
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Divider(color = Slate400.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        IconButton(
+                            onClick = { onSpeak?.invoke(message.text) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = if (language == "العربية") "قراءة النص" else "Read Text",
+                                tint = Slate400,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                         IconButton(
                             onClick = { 
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1030,7 +1278,7 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                                 clipboard.setPrimaryClip(clip)
                                 android.widget.Toast.makeText(context, if (language == "العربية") "تم نسخ النص" else "Text copied", android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(24.dp).padding(top = 8.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
@@ -1039,7 +1287,6 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = { 
                                 val sendIntent: Intent = Intent().apply {
@@ -1050,23 +1297,11 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                                 val shareIntent = Intent.createChooser(sendIntent, null)
                                 context.startActivity(shareIntent)
                             },
-                            modifier = Modifier.size(24.dp).padding(top = 8.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = if (language == "العربية") "مشاركة" else "Share",
-                                tint = Slate400,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { onSpeak?.invoke(message.text) },
-                            modifier = Modifier.size(48.dp).padding(top = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = if (language == "العربية") "قراءة النص" else "Read Text",
                                 tint = Slate400,
                                 modifier = Modifier.size(16.dp)
                             )

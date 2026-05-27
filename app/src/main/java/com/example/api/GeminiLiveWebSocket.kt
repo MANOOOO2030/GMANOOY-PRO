@@ -18,11 +18,11 @@ class GeminiLiveWebSocket(
     private var webSocket: WebSocket? = null
     
     private val modelsToTry = listOf(
-        "models/gemini-2.0-flash",
-        "models/gemini-2.0-flash-exp"
+        "models/gemini-2.5-flash-native-audio-preview-12-2025",
+        "models/gemini-2.5-flash"
     )
 
-    fun connect(voiceName: String = "Aoede", language: String = "العربية", index: Int = 0) {
+    fun connect(voiceName: String = "Aoede", language: String = "العربية", userEmail: String? = null, index: Int = 0) {
         if (index >= modelsToTry.size) {
             Log.e("GeminiLive", "All live models exhausted")
             return
@@ -69,7 +69,12 @@ class GeminiLiveWebSocket(
                         put("systemInstruction", JSONObject().apply {
                             put("parts", JSONArray().apply {
                                 put(JSONObject().apply {
-                                    put("text", "You are GMANOOY. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts. Strict Sourcing Policy: When retrieving information or links, strictly prioritize fetching data and URLs from official websites, authorized press, and highly reliable sources. Completely avoid unverified social media claims.")
+                                    val instr = if (userEmail != null) {
+                                        "You are GMANOOY, a specialized AI assistant. The user is logged in with their premium linked Google account ($userEmail). Address them warmly and dynamically as your respected user, acknowledging their registered Google account. Tailor all explanations, suggestions, and responses to prioritize artificial intelligence (AI) topics, advanced tech discussions, and code. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts. Strict Sourcing Policy: When retrieving information or links, strictly prioritize fetching data and URLs from official websites, authorized press, and highly reliable sources. Completely avoid unverified social media claims."
+                                    } else {
+                                        "You are GMANOOY. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts. Strict Sourcing Policy: When retrieving information or links, strictly prioritize fetching data and URLs from official websites, authorized press, and highly reliable sources. Completely avoid unverified social media claims."
+                                    }
+                                    put("text", instr)
                                 })
                             })
                         })
@@ -109,7 +114,7 @@ class GeminiLiveWebSocket(
                 Log.e("GeminiLive", "WebSocket Failure with $currentModel", t)
                 // Retry with the next model
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    connect(voiceName, language, index + 1)
+                    connect(voiceName, language, userEmail, index + 1)
                 }, 1000)
             }
 
@@ -117,7 +122,7 @@ class GeminiLiveWebSocket(
                 Log.d("GeminiLive", "WebSocket Closed: $code $reason")
                 if (code != 1000) {
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        connect(voiceName, language, index + 1)
+                        connect(voiceName, language, userEmail, index + 1)
                     }, 1000)
                 }
             }

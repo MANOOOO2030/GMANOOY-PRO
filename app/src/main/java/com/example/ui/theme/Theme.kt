@@ -9,6 +9,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme =
   darkColorScheme(
@@ -26,9 +27,30 @@ private val DarkColorScheme =
     outline = GlassBorder
   )
 
+private val LightColorScheme =
+  lightColorScheme(
+    primary = Indigo500,
+    secondary = Violet500,
+    background = Color(0xFFF1F5F9), // Slate100
+    surface = Color(0xFFF8FAFC), // soft, eye-soothing off-white
+    onPrimary = Color.White,
+    onBackground = Color(0xFF0F172A),
+    onSurface = Color(0xFF0F172A),
+    primaryContainer = Color(0xFFE0E7FF),
+    onPrimaryContainer = Color(0xFF312E81),
+    surfaceVariant = Color(0xFFCBD5E1),
+    onSurfaceVariant = Color(0xFF334155),
+    outline = Color(0xFF94A3B8)
+  )
+
 @Composable
 fun MyApplicationTheme(
+  isDarkTheme: Boolean = isSystemInDarkTheme(),
   content: @Composable () -> Unit,
 ) {
-  MaterialTheme(colorScheme = DarkColorScheme, typography = Typography, content = content)
+  MaterialTheme(
+      colorScheme = if (isDarkTheme) DarkColorScheme else LightColorScheme,
+      typography = Typography, 
+      content = content
+  )
 }

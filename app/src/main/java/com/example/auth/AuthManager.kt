@@ -13,6 +13,10 @@ class AuthManager(context: Context) {
     var googleOAuthToken: String?
         get() = prefs.getString("google_oauth_token", null)
         set(value) = prefs.edit().putString("google_oauth_token", value).apply()
+
+    var googleUserEmail: String?
+        get() = prefs.getString("google_user_email", null)
+        set(value) = prefs.edit().putString("google_user_email", value).apply()
         
     var guestMessageCount: Int
         get() = prefs.getInt("guest_message_count", 0)
@@ -32,8 +36,25 @@ class AuthManager(context: Context) {
         return isGuestMode && guestMessageCount >= limit
     }
     
+    var isDarkTheme: Boolean
+        get() = prefs.getBoolean("is_dark_theme", true)
+        set(value) = prefs.edit().putBoolean("is_dark_theme", value).apply()
+
+    var language: String
+        get() = prefs.getString("language", "System Default (Auto)") ?: "System Default (Auto)"
+        set(value) = prefs.edit().putString("language", value).apply()
+
+    var selectedVoice: String
+        get() = prefs.getString("selected_voice", "Aoede") ?: "Aoede"
+        set(value) = prefs.edit().putString("selected_voice", value).apply()
+
     fun logout() {
         isGuestMode = true
         googleOAuthToken = null
+        googleUserEmail = null
+    }
+
+    fun factoryReset() {
+        prefs.edit().clear().apply()
     }
 }

@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">GMANOOY</string>
+    <string name="sign_out_back">Sign Out</string>
+    <string name="trial_period_ended">Trial Period Ended</string>
+    <string name="trial_period_ended_body">Trial period ended. Please sign in with your Google account to continue using advanced features.</string>
+    <string name="sign_in">Sign In</string>
+    <string name="later">Later</string>
+    <string name="welcome_to_gmanoooy">Welcome to GMANOOY</string>
+    <string name="login_body">An intelligent companion adapted to your style. Log in to save your queries and access all features across your devices.</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="continue_as_guest">Continue as Guest</string>
+    <string name="factory_reset">Restore Factory Settings</string>
 </resources>
