@@ -313,11 +313,19 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}
     var updateInfoState by remember { mutableStateOf<UpdateInfo?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val updateManager = remember { UpdateManager(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.toastMessage.collect { msg ->
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MeshBackground()
         
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = Color.Transparent,
             topBar = {
                 val geminiGradient = remember {
