@@ -33,7 +33,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _isCameraActive = MutableStateFlow(false)
     val isCameraActive: StateFlow<Boolean> = _isCameraActive.asStateFlow()
 
-    private val apiKey = BuildConfig.GEMINI_API_KEY
+    private val authManager = com.example.auth.AuthManager(application)
+    private val defaultApiKey = BuildConfig.GEMINI_API_KEY
+    
+    val showQuotaExceededDialog = MutableStateFlow(false)
+
+    private fun getApiKey(): String? {
+        return if (authManager.isGuestMode) defaultApiKey else null
+    }
+
+    private fun getAuthHeader(): String? {
+        return if (!authManager.isGuestMode && authManager.googleOAuthToken != null) {
+            "Bearer ${authManager.googleOAuthToken}"
+        } else null
+    }
+
+    private fun consumeQuotaAndCheck(): Boolean {
+        if (authManager.isGuestMode) {
+            if (authManager.hasReachedGuestQuota(limit = 5)) {
+                showQuotaExceededDialog.value = true
+                return false
+            } else {
+                authManager.incrementGuestMessageCount()
+            }
+        }
+        return true
+    }
+
     private var liveWebSocket: GeminiLiveWebSocket? = null
     
     val language = MutableStateFlow("العربية")
@@ -49,6 +75,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String, attachedImageBase64: String? = null, mimeType: String? = "image/jpeg") {
         if (text.isBlank() && attachedImageBase64 == null) return
+        
+        if (!consumeQuotaAndCheck()) return
         
         _messages.update { it + ChatMessage(isUser = true, text = text, attachedBase64Image = attachedImageBase64, attachedMimeType = mimeType) }
 
@@ -136,7 +164,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 for (model in ttsModels) {
                     try {
                         val url = if (model.startsWith("gemini-2") || model.startsWith("gemini-3")) "v1alpha/models/$model:generateContent" else "v1beta/models/$model:generateContent"
-                        val response = RetrofitClient.service.generateContent(url, apiKey, request)
+                        val response = RetrofitClient.service.generateContent(url, getAuthHeader(), getApiKey(), request)
                         var played = false
                         response.candidates?.firstOrNull()?.content?.parts?.forEach { part ->
                             part.inlineData?.let { inline ->
@@ -185,7 +213,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         for (model in imageModels) {
             try {
                 val url = if (model.startsWith("gemini-2") || model.startsWith("gemini-3")) "v1alpha/models/$model:generateContent" else "v1beta/models/$model:generateContent"
-                val response = RetrofitClient.service.generateImage(url, apiKey, request)
+                val response = RetrofitClient.service.generateImage(url, getAuthHeader(), getApiKey(), request)
                 val imgData = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.inlineData?.data
                 if (imgData != null) return@withContext imgData
             } catch(e: Exception) {
@@ -248,7 +276,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     "v1beta/models/$model:generateContent"
                 }
-                val response = RetrofitClient.service.generateContent(url, apiKey, currentRequest)
+                val response = RetrofitClient.service.generateContent(url, getAuthHeader(), getApiKey(), currentRequest)
                 val parts = response.candidates?.firstOrNull()?.content?.parts
                 parts?.forEach { part ->
                     part.text?.let { textResult = it }
@@ -312,11 +340,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startLiveAudio() {
+        if (!consumeQuotaAndCheck()) return
+        
         _isLiveAudioActive.value = true
         _messages.update { it + ChatMessage(isUser = false, text = "🔊 بدأ الصوت المباشر... يمكنك التحدث الآن.") }
         
         liveWebSocket = GeminiLiveWebSocket(
-            apiKey = apiKey,
+            apiKey = getApiKey(),
+            authHeader = getAuthHeader(),
             onAudioReceived = { pcm ->
                 audioHandler.feedAudioOutput(pcm)
             },

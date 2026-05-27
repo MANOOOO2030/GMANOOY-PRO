@@ -91,14 +91,16 @@ interface GeminiApiService {
     @POST
     suspend fun generateContent(
         @retrofit2.http.Url url: String,
-        @Query("key") apiKey: String,
+        @retrofit2.http.Header("Authorization") authHeader: String?,
+        @Query("key") apiKey: String?,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse
 
     @POST
     suspend fun generateImage(
         @retrofit2.http.Url url: String,
-        @Query("key") apiKey: String,
+        @retrofit2.http.Header("Authorization") authHeader: String?,
+        @Query("key") apiKey: String?,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse
 }

@@ -81,7 +81,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
+fun ChatScreen(viewModel: ChatViewModel = viewModel(), onLogout: () -> Unit = {}) {
     val messages by viewModel.messages.collectAsState()
     val isLiveAudioActive by viewModel.isLiveAudioActive.collectAsState()
     val isCameraActive by viewModel.isCameraActive.collectAsState()
@@ -413,6 +413,14 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                                         }
                                     }
                                 )
+                                
+                                DropdownMenuItem(
+                                    text = { Text(if (language == "العربية") "تسجيل الخروج / العودة" else "Sign Out / Back", color = Color(0xFFEF4444)) },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        onLogout()
+                                    }
+                                )
                             }
                         }
                     },
@@ -720,6 +728,31 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                 dismissButton = {
                     TextButton(onClick = { showUpdateDialog = false }) {
                         Text(if (language == "العربية") "لاحقاً" else "Later", color = Slate400)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Slate100,
+                textContentColor = Slate400
+            )
+        }
+        
+        val showQuotaDialog by viewModel.showQuotaExceededDialog.collectAsState()
+        if (showQuotaDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.showQuotaExceededDialog.value = false },
+                title = { Text("Trial Period Ended", color = Slate100) },
+                text = { Text("Trial period ended. Please sign in with your Google account to continue using advanced features.", color = Slate400) },
+                confirmButton = {
+                    TextButton(onClick = { 
+                        viewModel.showQuotaExceededDialog.value = false
+                        onLogout()
+                    }) {
+                        Text("Sign In", color = Cyan500)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.showQuotaExceededDialog.value = false }) {
+                        Text("Later", color = Slate400)
                     }
                 },
                 containerColor = Color(0xFF1E293B),

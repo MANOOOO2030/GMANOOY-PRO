@@ -10,7 +10,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class GeminiLiveWebSocket(
-    private val apiKey: String,
+    private val apiKey: String?,
+    private val authHeader: String?,
     private val onAudioReceived: (ByteArray) -> Unit,
     private val onConnected: () -> Unit
 ) {
@@ -27,9 +28,18 @@ class GeminiLiveWebSocket(
             return
         }
         val currentModel = modelsToTry[index]
-        val request = Request.Builder()
-            .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=$apiKey")
-            .build()
+        
+        var urlStr = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
+        if (apiKey != null) {
+            urlStr += "?key=$apiKey"
+        }
+        
+        val requestBuilder = Request.Builder().url(urlStr)
+        if (authHeader != null) {
+            requestBuilder.addHeader("Authorization", authHeader)
+        }
+        
+        val request = requestBuilder.build()
         
         webSocket = RetrofitClient.genericClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
