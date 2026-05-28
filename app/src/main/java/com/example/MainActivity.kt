@@ -5,71 +5,87 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
 import com.example.auth.AuthManager
 import com.example.ui.ChatScreen
 import com.example.ui.LoginScreen
 import com.example.ui.theme.MyApplicationTheme
 
+val LanguageTrigger = mutableStateOf("")
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val authManagerInstance = AuthManager(this)
+    val lang = authManagerInstance.language
+    val initialLangCode = if (lang == "System Default (Auto)" || lang == "System Default") {
+        if (java.util.Locale.getDefault().language == "ar") "ar" else "en"
+    } else {
+        if (lang == "العربية" || lang == "Arabic") "ar" else if (lang == "French") "fr" else "en"
+    }
+    
+    LanguageTrigger.value = initialLangCode
+
     enableEdgeToEdge()
     setContent {
       val context = LocalContext.current
-      val authManager = remember { AuthManager(context) }
-      var isDarkTheme by remember { mutableStateOf(authManager.isDarkTheme) }
+      val langCode by LanguageTrigger
 
-      // We pass the setter down if needed, but the ChatScreen ViewModel can also handle updating this or we inject a callback down.
-      // Easiest is to pass through a composition local, or let ChatScreen update AuthManager and then notify.
-      // Let's just create a quick flow/callback so it updates immediately.
-      
-      MyApplicationTheme(isDarkTheme = isDarkTheme) {
-         
-         // We do not have a persistent skipped state besides isGuestMode.
-         // Let's assume if they don't have token and guest mode is false, show login.
-         // By default AuthManager initializes isGuestMode=true, which might skip login immediately.
-         // Let's introduce a proper flag or let isGuestMode handle it.
-         // Wait, AuthManager starts isGuestMode = true by default. If we want them to see login on first launch:
-         // Actually, if we just modify AuthManager to return false for isGuestMode by default, 
-         // wait, isGuestMode=false means premium. Let's make isGuestMode=false and token=null the default, 
-         // which means "Not logged in, Not Guest".
-         
-         var currentScreen by remember {
-             mutableStateOf(
-                 if (!authManager.isGuestMode && authManager.googleOAuthToken == null) "login"
-                 else "chat"
-             )
-         }
-         
-         if (currentScreen == "login") {
-             LoginScreen(
-                 onLoginSuccess = { token, email ->
-                     authManager.googleOAuthToken = token
-                     authManager.googleUserEmail = email
-                     authManager.isGuestMode = false
-                     currentScreen = "chat"
-                 },
-                 onSkip = {
-                     authManager.isGuestMode = true
-                     currentScreen = "chat"
-                 }
-             )
-         } else {
-             ChatScreen(
-                 onLogout = {
-                     authManager.logout()
-                     // We should reset AuthManager state to require login
-                     authManager.googleOAuthToken = null
-                     authManager.isGuestMode = false // force login screen since it's the "none" state
-                     currentScreen = "login"
-                 },
-                 onThemeChange = { dark -> 
-                     isDarkTheme = dark
-                     authManager.isDarkTheme = dark
-                 }
-             )
-         }
+      val updatedConfig = remember(langCode) {
+          val locale = java.util.Locale(langCode)
+          java.util.Locale.setDefault(locale)
+          val config = android.content.res.Configuration(context.resources.configuration)
+          config.setLocale(locale)
+          context.createConfigurationContext(config) // updates resources contextually
+          context.resources.updateConfiguration(config, context.resources.displayMetrics)
+          config
+      }
+
+      CompositionLocalProvider(
+          LocalConfiguration provides updatedConfig,
+          androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr
+      ) {
+          val authManager = remember { AuthManager(context) }
+          var isDarkTheme by remember { mutableStateOf(authManager.isDarkTheme) }
+          
+          MyApplicationTheme(isDarkTheme = isDarkTheme) {
+             var currentScreen by remember {
+                 mutableStateOf(
+                     if (!authManager.isGuestMode && authManager.googleOAuthToken == null) "login"
+                     else "chat"
+                 )
+             }
+             
+             if (currentScreen == "login") {
+                 LoginScreen(
+                     onLoginSuccess = { token, email ->
+                         authManager.googleOAuthToken = token
+                         authManager.googleUserEmail = email
+                         authManager.isGuestMode = false
+                         currentScreen = "chat"
+                     },
+                     onSkip = {
+                         authManager.isGuestMode = true
+                         currentScreen = "chat"
+                     }
+                 )
+             } else {
+                 ChatScreen(
+                     onLogout = {
+                         authManager.logout()
+                         authManager.googleOAuthToken = null
+                         authManager.isGuestMode = false
+                         currentScreen = "login"
+                     },
+                     onThemeChange = { dark -> 
+                         isDarkTheme = dark
+                         authManager.isDarkTheme = dark
+                     }
+                 )
+             }
+          }
       }
     }
   }

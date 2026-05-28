@@ -55,16 +55,42 @@
         </aapt:attr>
     </path>
 
-    <!-- Smaller star -->
+    <!-- Four small stars -->
+    <!-- Top-Left -->
     <path
-        android:pathData="M80,18 C80,26 86,30 94,30 C86,30 80,34 80,42 C80,34 74,30 66,30 C74,30 80,26 80,18 Z">
+        android:pathData="M24,12 C24,20 30,24 38,24 C30,24 24,28 24,36 C24,28 18,24 10,24 C18,24 24,20 24,12 Z">
         <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="66"
-                android:startY="18"
-                android:endX="94"
-                android:endY="42"
-                android:type="linear">
+            <gradient android:startX="10" android:startY="12" android:endX="38" android:endY="36" android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#A9C7FA" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Top-Right -->
+    <path
+        android:pathData="M84,12 C84,20 90,24 98,24 C90,24 84,28 84,36 C84,28 78,24 70,24 C78,24 84,20 84,12 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="70" android:startY="12" android:endX="98" android:endY="36" android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#A9C7FA" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Bottom-Left -->
+    <path
+        android:pathData="M24,72 C24,80 30,84 38,84 C30,84 24,88 24,96 C24,88 18,84 10,84 C18,84 24,80 24,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="10" android:startY="72" android:endX="38" android:endY="96" android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#A9C7FA" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Bottom-Right -->
+    <path
+        android:pathData="M84,72 C84,80 90,84 98,84 C90,84 84,88 84,96 C84,88 78,84 70,84 C78,84 84,80 84,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="70" android:startY="72" android:endX="98" android:endY="96" android:type="linear">
                 <item android:color="#FFFFFF" android:offset="0.0" />
                 <item android:color="#A9C7FA" android:offset="1.0" />
             </gradient>

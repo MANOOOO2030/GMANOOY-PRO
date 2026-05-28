@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
 import android.util.Base64
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -62,6 +61,9 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Attachment
@@ -253,33 +255,23 @@ fun ChatScreen(
     val permissionsState = rememberMultiplePermissionsState(permissions = permissionsList)
     val allGranted = permissionsState.allPermissionsGranted
 
-    // Text To Speech
-    val tts = remember {
-        var textToSpeech: TextToSpeech? = null
-        textToSpeech = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                textToSpeech?.language = java.util.Locale.getDefault()
-            }
-        }
-        textToSpeech
-    }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            tts?.stop()
-            tts?.shutdown()
-        }
+
+
+
+    fun android.content.Context.getActivity(): android.app.Activity? = when (this) {
+        is android.app.Activity -> this
+        is android.content.ContextWrapper -> baseContext.getActivity()
+        else -> null
     }
 
 
-
-    // Speech Recognizer
     var isListening by remember { mutableStateOf(false) }
     
     val speechRecognizer = remember {
         try {
-            if (SpeechRecognizer.isRecognitionAvailable(context)) {
-                val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+            if (android.speech.SpeechRecognizer.isRecognitionAvailable(context)) {
+                val recognizer = android.speech.SpeechRecognizer.createSpeechRecognizer(context)
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
                     override fun onBeginningOfSpeech() {}
@@ -289,16 +281,16 @@ fun ChatScreen(
                     override fun onError(error: Int) { 
                         isListening = false 
                         val errMsg = when(error) {
-                            SpeechRecognizer.ERROR_AUDIO -> if (language == "العربية") "خطأ في تسجيل الصوت" else "Audio recording error"
-                            SpeechRecognizer.ERROR_CLIENT -> if (language == "العربية") "خطأ من العميل" else "Client side error"
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> if (language == "العربية") "الصلاحيات غير كافية" else "Insufficient permissions"
-                            SpeechRecognizer.ERROR_NETWORK -> if (language == "العربية") "خطأ في الاتصال بالشبكة" else "Network error"
-                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> if (language == "العربية") "انتهت مهلة الشبكة" else "Network timeout"
-                            SpeechRecognizer.ERROR_NO_MATCH -> if (language == "العربية") "لم يتم العرف على الصوت، جرب مجدداً" else "No speech match"
-                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> if (language == "العربية") "جهاز التعرف على الصوت مشغول" else "Speech recognition service busy"
-                            SpeechRecognizer.ERROR_SERVER -> if (language == "العربية") "خطأ من خادم جوجل" else "Google server error"
-                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (language == "العربية") "انتهت مهلة التحدث دون التقاط صوت" else "Speech input timeout"
-                            else -> if (language == "العربية") "خطأ غير معروف في التعرف على الصوت" else "Unknown speech recognition error"
+                            SpeechRecognizer.ERROR_AUDIO -> context.getString(R.string.audio_recording_error)
+                            SpeechRecognizer.ERROR_CLIENT -> context.getString(R.string.client_side_error)
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> context.getString(R.string.insufficient_permissions)
+                            SpeechRecognizer.ERROR_NETWORK -> context.getString(R.string.network_error)
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> context.getString(R.string.network_timeout)
+                            SpeechRecognizer.ERROR_NO_MATCH -> context.getString(R.string.no_speech_match)
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> context.getString(R.string.speech_recognition_busy)
+                            SpeechRecognizer.ERROR_SERVER -> context.getString(R.string.google_server_error)
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> context.getString(R.string.speech_input_timeout)
+                            else -> context.getString(R.string.unknown_speech_error)
                         }
                         android.widget.Toast.makeText(context, errMsg, android.widget.Toast.LENGTH_SHORT).show()
                     }
@@ -313,10 +305,7 @@ fun ChatScreen(
                         }
                     }
                     override fun onPartialResults(partialResults: Bundle?) {
-                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        if (!matches.isNullOrEmpty()) {
-                            inputText = matches[0]
-                        }
+                        // Removed inputText assignment to prevent UI freezing/lag
                     }
                     override fun onEvent(eventType: Int, params: Bundle?) {}
                 })
@@ -359,10 +348,11 @@ fun ChatScreen(
         }
     }
 
+    // Removed duplicate CompositionLocalProvider
     Box(modifier = Modifier.fillMaxSize()) {
         MeshBackground()
-        
-        Scaffold(
+            
+            Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             containerColor = Color.Transparent,
             topBar = {
@@ -388,7 +378,7 @@ fun ChatScreen(
                             ) {
                                 Icon(
                                     Icons.Default.Settings, 
-                                    contentDescription = if (language == "العربية") "الإعدادات" else "Settings", 
+                                    contentDescription = stringResource(R.string.settings), 
                                     tint = if (isDarkTheme) Color.White else Color.Black,
                                     modifier = Modifier
                                         .size(28.dp)
@@ -407,7 +397,7 @@ fun ChatScreen(
                                         .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                                 )
                                 Spacer(Modifier.height(4.dp))
-                                Text(if (language == "العربية") "الإعدادات" else "Settings", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(stringResource(id = R.string.settings), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                             DropdownMenu(
                                 expanded = showSettingsMenu,
@@ -424,7 +414,7 @@ fun ChatScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(if (language == "العربية") "الوضع الداكن" else "Dark Mode", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                                    Text(stringResource(R.string.dark_mode), color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                                     Switch(
                                         checked = isDarkTheme,
                                         onCheckedChange = { 
@@ -438,47 +428,68 @@ fun ChatScreen(
                                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
 
                                 // 2. Language Dropdown
-                                Text(if (language == "العربية") "اللغة" else "Language", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
-                                val languages = listOf("System Default (Auto)", "English", "العربية", "French")
-                                languages.forEach { lang ->
-                                    val isSelected = language == lang || (language == "Arabic" && lang == "العربية") || (lang == "System Default (Auto)" && !languages.contains(language) && language != "Arabic")
-                                    DropdownMenuItem(
-                                        text = { Text(lang, color = if (isSelected) Cyan500 else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(36.dp),
-                                        onClick = {
-                                            viewModel.language.value = if (lang == "System Default (Auto)") {
-                                                if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
-                                            } else {
-                                                lang
-                                            }
-                                            authManager.language = lang
-                                            showSettingsMenu = false
+                                val languagesMap = mapOf(
+                                    "System Default (Auto)" to "System Default",
+                                    "English" to "English",
+                                    "العربية" to "العربية",
+                                    "French" to "French"
+                                )
+                                SettingsNestedDropdown(
+                                    label = stringResource(R.string.language),
+                                    selectedOption = language,
+                                    options = languagesMap,
+                                    onOptionSelected = { lang ->
+                                        val detectedLang = if (lang == "System Default (Auto)" || lang == "System Default") {
+                                            if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
+                                        } else {
+                                            lang
                                         }
-                                    )
-                                }
+                                        viewModel.language.value = detectedLang
+                                        authManager.language = lang
+                                        showSettingsMenu = false
+                                        
+                                        val langCode = if (detectedLang == "العربية" || detectedLang == "Arabic") "ar" else if (detectedLang == "French") "fr" else "en"
+                                        val locale = java.util.Locale(langCode)
+                                        java.util.Locale.setDefault(locale)
+                                        val config = android.content.res.Configuration(context.resources.configuration)
+                                        config.setLocale(locale)
+                                        context.resources.updateConfiguration(config, context.resources.displayMetrics)
+                                        // Update LocalConfiguration to trigger recompisition implicitly if we do this at root, or just recreate.
+                                        // But users don't want restart. So update resources directly.
+                                        // To ensure Compose recomposes strings, we can invalidate. 
+                                        // However, the cleanest Compose way is handled by a mutable state trigger in MainActivity.
+                                        // So let's notify MainActivity.
+                                        com.example.LanguageTrigger.value = langCode
+                                    }
+                                )
 
                                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
 
                                 // 3. Premium Voice Selection
-                                Text(if (language == "العربية") "الصوت المميز" else "Premium Voice", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
-                                val voices = listOf("Aoede", "Charon", "Fenrir", "Kore", "Puck")
-                                voices.forEach { voiceId ->
-                                    DropdownMenuItem(
-                                        text = { Text(voiceId, color = if (voiceName == voiceId) Emerald400 else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                        modifier = Modifier.height(36.dp),
-                                        onClick = {
-                                            viewModel.setVoiceAndGreet(voiceId)
-                                            authManager.selectedVoice = voiceId
-                                            showSettingsMenu = false
-                                        }
-                                    )
-                                }
+                                val voicesMap = mapOf(
+                                    "voice_child_male" to context.getString(R.string.voice_child_male),
+                                    "voice_child_female" to context.getString(R.string.voice_child_female),
+                                    "voice_young_male" to context.getString(R.string.voice_young_male),
+                                    "voice_young_female" to context.getString(R.string.voice_young_female),
+                                    "voice_man" to context.getString(R.string.voice_man),
+                                    "voice_woman" to context.getString(R.string.voice_woman),
+                                    "voice_grandpa" to context.getString(R.string.voice_grandpa),
+                                    "voice_grandma" to context.getString(R.string.voice_grandma)
+                                )
+                                SettingsNestedDropdown(
+                                    label = stringResource(R.string.premium_voice),
+                                    selectedOption = voiceName,
+                                    options = voicesMap,
+                                    onOptionSelected = { voiceId ->
+                                        viewModel.setVoiceAndGreet(voiceId)
+                                        authManager.selectedVoice = voiceId
+                                        showSettingsMenu = false
+                                    }
+                                )
                                 
                                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 4.dp))
                                 
-                                val updateLabel = if (language == "العربية") "التحقق من التحديثات" else "Check for Updates"
+                                val updateLabel = stringResource(R.string.check_for_updates)
                                 DropdownMenuItem(
                                     text = { Text(if (isCheckingUpdate) "..." else updateLabel, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp) },
                                     leadingIcon = {
@@ -497,7 +508,8 @@ fun ChatScreen(
                                                 updateInfoState = info
                                                 showUpdateDialog = true
                                             } else {
-                                                android.widget.Toast.makeText(context, if (language == "العربية") "أنت على أحدث إصدار." else "You are on the latest version.", android.widget.Toast.LENGTH_SHORT).show()
+                                                val latestMsg = context.getString(R.string.latest_version_msg)
+                                                android.widget.Toast.makeText(context, latestMsg, android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -545,7 +557,7 @@ fun ChatScreen(
                         ) {
                                 Icon(
                                     imageVector = Icons.Default.Email,
-                                    contentDescription = if (language == "العربية") "محادثة جديدة" else "New Chat",
+                                    contentDescription = stringResource(R.string.new_chat),
                                     tint = if (isDarkTheme) Color.White else Color.Black,
                                     modifier = Modifier
                                         .size(28.dp)
@@ -564,7 +576,7 @@ fun ChatScreen(
                                         .shadow(elevation = 6.dp, shape = CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                                 )
                                 Spacer(Modifier.height(4.dp))
-                                Text(if (language == "العربية") "محادثة جديدة" else "New Chat", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.new_chat), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         if (isCameraActive) {
                             IconButton(
@@ -733,7 +745,7 @@ fun ChatScreen(
                                 .testTag("chat_input"),
                             placeholder = {
                                 Text(
-                                    if (language == "العربية") "اسأل عن شيء معقد..." else "Ask about something complex...",
+                                    stringResource(R.string.ask_complex),
                                     color = Slate400,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -741,36 +753,6 @@ fun ChatScreen(
                             shape = CircleShape,
                             enabled = !isLiveAudioActive,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                            trailingIcon = {
-                                 IconButton(
-                                     modifier = Modifier.size(32.dp),
-                                     onClick = {
-                                     val recordAudioGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                     if (recordAudioGranted) {
-                                         if (speechRecognizer != null) {
-                                             if (isListening) {
-                                                 speechRecognizer.stopListening()
-                                                 isListening = false
-                                             } else {
-                                                 inputText = ""
-                                                 speechRecognizer.startListening(speechIntent)
-                                                 isListening = true
-                                             }
-                                         } else {
-                                             android.widget.Toast.makeText(context, "التعرف على الصوت غير متاح", android.widget.Toast.LENGTH_SHORT).show()
-                                         }
-                                     } else {
-                                         permissionsState.launchMultiplePermissionRequest()
-                                     }
-                                 }) {
-                                     Icon(
-                                         imageVector = Icons.Default.Mic,
-                                         contentDescription = "Voice Input",
-                                         modifier = Modifier.size(18.dp),
-                                         tint = if (isListening) Color.Red else Slate400
-                                     )
-                                 }
-                            },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
@@ -781,6 +763,40 @@ fun ChatScreen(
                                 cursorColor = MaterialTheme.colorScheme.primary
                             )
                         )
+
+                        IconButton(
+                            modifier = Modifier.size(36.dp),
+                            onClick = {
+                                val recordAudioGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                if (recordAudioGranted) {
+                                    if (speechRecognizer != null) {
+                                        try {
+                                            if (isListening) {
+                                                speechRecognizer.stopListening()
+                                                isListening = false
+                                            } else {
+                                                inputText = ""
+                                                speechRecognizer.startListening(speechIntent)
+                                                isListening = true
+                                            }
+                                        } catch (e: Exception) {
+                                            android.widget.Toast.makeText(context, "التعرف على الصوت غير متاح أو به خطأ", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        android.widget.Toast.makeText(context, "التعرف على الصوت غير متاح", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    permissionsState.launchMultiplePermissionRequest()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Input",
+                                modifier = Modifier.size(24.dp),
+                                tint = if (isListening) Color.Red else MaterialTheme.colorScheme.primary
+                            )
+                        }
 
                         FloatingActionButton(
                             onClick = {
@@ -813,19 +829,19 @@ fun ChatScreen(
             val uiInfo = updateInfoState!!
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
-                title = { Text(if (language == "العربية") "تحديث جديد متاح" else "New Update Available") },
-                text = { Text(if (language == "العربية") "هل ترغب في تنزيل وتثبيت التحديث الجديد المستند إلى التاريخ: ${uiInfo.publishedAt}؟" else "Would you like to download and install the new update published at: ${uiInfo.publishedAt}?") },
+                title = { Text(stringResource(R.string.new_update_available)) },
+                text = { Text(stringResource(id = R.string.download_prompt, uiInfo.publishedAt ?: "")) },
                 confirmButton = {
                     TextButton(onClick = {
                         showUpdateDialog = false
                         updateManager.downloadAndInstall(uiInfo)
                     }) {
-                        Text(if (language == "العربية") "تنزيل الآن" else "Download Now", color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.download_now), color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateDialog = false }) {
-                        Text(if (language == "العربية") "لاحقاً" else "Later", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.later), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -852,135 +868,6 @@ fun ChatScreen(
                 dismissButton = {
                     TextButton(onClick = { viewModel.showQuotaExceededDialog.value = false }) {
                         Text(stringResource(id = R.string.later), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.surface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (showLanguageDialog) {
-            val languages = listOf("System Default (Auto)", "English", "العربية", "French")
-            AlertDialog(
-                onDismissRequest = { showLanguageDialog = false },
-                title = {
-                    Text(
-                        text = if (language == "العربية") "اختر اللغة" else "Select Language",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        languages.forEach { lang ->
-                            val isSelected = language == lang || (language == "Arabic" && lang == "العربية") || (lang == "System Default (Auto)" && !languages.contains(language) && language != "Arabic")
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.language.value = if (lang == "System Default (Auto)") {
-                                            if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
-                                        } else {
-                                            lang
-                                        }
-                                        authManager.language = lang
-                                        showLanguageDialog = false
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = lang,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 16.sp
-                                )
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        viewModel.language.value = if (lang == "System Default (Auto)") {
-                                            if (java.util.Locale.getDefault().language == "ar") "العربية" else "English"
-                                        } else {
-                                            lang
-                                        }
-                                        authManager.language = lang
-                                        showLanguageDialog = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showLanguageDialog = false }) {
-                        Text(if (language == "العربية") "إغلاق" else "Close", color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.surface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (showVoiceDialog) {
-            val voices = listOf("Aoede", "Charon", "Fenrir", "Kore", "Puck")
-            AlertDialog(
-                onDismissRequest = { showVoiceDialog = false },
-                title = {
-                    Text(
-                        text = if (language == "العربية") "اختر الصوت المميز" else "Select Premium Voice",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        voices.forEach { voiceId ->
-                            val isSelected = voiceName == voiceId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.setVoiceAndGreet(voiceId)
-                                        authManager.selectedVoice = voiceId
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.VolumeUp,
-                                        contentDescription = "Test Audio",
-                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = voiceId,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 16.sp
-                                    )
-                                }
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        viewModel.setVoiceAndGreet(voiceId)
-                                        authManager.selectedVoice = voiceId
-                                    }
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showVoiceDialog = false }) {
-                        Text(if (language == "العربية") "حفظ" else "Save", color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -1124,12 +1011,10 @@ fun MeshBackground() {
 
 @Composable
 fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, language: String = "العربية") {
-    val isDark = MaterialTheme.colorScheme.background == DarkBg || MaterialTheme.colorScheme.background == Color(0xFF0B0E14)
     val isUser = message.isUser
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bgColor = if (isUser) Indigo500 else (if (isDark) Slate800 else Color(0xFFE2E8F0))
-    val borderColor = if (isUser) Color.Transparent else (if (isDark) GlassBorder else Color(0xFFCBD5E1))
-    val textColor = if (isUser) Color.White else (if (isDark) Color.White else Color(0xFF1E293B))
+    val bgColor = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val borderColor = if (isUser) Color.Transparent else MaterialTheme.colorScheme.outline
     val shape = if (isUser) 
         RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 4.dp)
     else
@@ -1185,7 +1070,7 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                         if (bitmap != null) {
                             Image(
                                 bitmap = bitmap!!.asImageBitmap(),
-                                contentDescription = if (language == "العربية") "صورة مرفقة" else "Attached image",
+                                contentDescription = stringResource(R.string.attached_image),
                                 modifier = Modifier.fillMaxWidth().height(160.dp).padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp))
                             )
                         }
@@ -1193,18 +1078,18 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                         // Display non-image attachments
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 8.dp).background(Color.White.copy(alpha=0.1f), RoundedCornerShape(8.dp)).padding(8.dp)
+                            modifier = Modifier.padding(bottom = 8.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha=0.1f), RoundedCornerShape(8.dp)).padding(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Attachment,
                                 contentDescription = "File",
-                                tint = Slate100,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = "مرفق: ${message.attachedMimeType?.split("/")?.lastOrNull()?.uppercase() ?: "FILE"}",
-                                style = MaterialTheme.typography.bodySmall.copy(color = Slate100)
+                                style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface)
                             )
                         }
                     }
@@ -1215,20 +1100,16 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                 val cleanText = youtubeRegex.replace(message.text, "").trim()
                 
                 if (cleanText.isNotEmpty()) {
+                    val txtColorCompose = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    val lnkColorCompose = if (isUser) Color(0xFF4DEEEA) else MaterialTheme.colorScheme.primary
+                    
+                    val txtColor = txtColorCompose.toArgb()
+                    val lnkColor = lnkColorCompose.toArgb()
+
                     val context = LocalContext.current
                     androidx.compose.ui.viewinterop.AndroidView(
                         factory = { ctx ->
                             android.widget.TextView(ctx).apply {
-                                val txtColor = if (isUser) {
-                                    android.graphics.Color.WHITE
-                                } else {
-                                    if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#1E293B")
-                                }
-                                val lnkColor = if (isUser) {
-                                    android.graphics.Color.parseColor("#4DEEEA")
-                                } else {
-                                    if (isDark) android.graphics.Color.parseColor("#4DEEEA") else android.graphics.Color.parseColor("#4F46E5")
-                                }
                                 setTextColor(txtColor)
                                 textSize = 15f
                                 autoLinkMask = android.text.util.Linkify.WEB_URLS
@@ -1238,6 +1119,8 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                             }
                         },
                         update = { view ->
+                            view.setTextColor(txtColor)
+                            view.setLinkTextColor(lnkColor)
                             view.text = cleanText
                         }
                     )
@@ -1266,7 +1149,7 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = if (language == "العربية") "قراءة النص" else "Read Text",
+                                contentDescription = stringResource(R.string.read_text),
                                 tint = Slate400,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -1276,13 +1159,14 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                 val clip = android.content.ClipData.newPlainText("Copied Text", message.text)
                                 clipboard.setPrimaryClip(clip)
-                                android.widget.Toast.makeText(context, if (language == "العربية") "تم نسخ النص" else "Text copied", android.widget.Toast.LENGTH_SHORT).show()
+                                val clipTxt = context.getString(R.string.text_copied)
+                                android.widget.Toast.makeText(context, clipTxt, android.widget.Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
-                                contentDescription = if (language == "العربية") "نسخ" else "Copy",
+                                contentDescription = stringResource(R.string.copy),
                                 tint = Slate400,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -1301,13 +1185,52 @@ fun ChatBubble(message: ChatMessage, onSpeak: ((String) -> Unit)? = null, langua
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
-                                contentDescription = if (language == "العربية") "مشاركة" else "Share",
+                                contentDescription = stringResource(R.string.share),
                                 tint = Slate400,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsNestedDropdown(
+    label: String,
+    selectedOption: String,
+    options: Map<String, String>,
+    onOptionSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(options[selectedOption] ?: selectedOption, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                Text(" ▼", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (key, displayValue) ->
+                DropdownMenuItem(
+                    text = { Text(displayValue, color = if (selectedOption == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(36.dp),
+                    onClick = {
+                        onOptionSelected(key)
+                        expanded = false
+                    }
+                )
             }
         }
     }

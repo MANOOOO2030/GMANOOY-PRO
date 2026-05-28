@@ -2,8 +2,8 @@ package com.example.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.example.R
 import androidx.lifecycle.viewModelScope
-import com.example.BuildConfig
 import com.example.api.*
 import com.example.audio.AudioHandler
 import kotlinx.coroutines.Dispatchers
@@ -33,47 +33,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _isCameraActive = MutableStateFlow(false)
     val isCameraActive: StateFlow<Boolean> = _isCameraActive.asStateFlow()
 
-    private var localTts: android.speech.tts.TextToSpeech? = null
-
     init {
         try {
-            localTts = android.speech.tts.TextToSpeech(application) { status ->
-                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                    val locale = if (language.value == "العربية") {
-                        java.util.Locale("ar")
-                    } else {
-                        java.util.Locale.US
-                    }
-                    localTts?.language = locale
-                }
-            }
+            // Replaced by cloud TTS
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
     private val authManager = com.example.auth.AuthManager(application)
-    private val defaultApiKey = BuildConfig.GEMINI_API_KEY
+    val GEMINI_API_KEY = "YOUR_API_KEY_HERE"
     
     val showQuotaExceededDialog = MutableStateFlow(false)
 
     private fun getApiKey(): String? {
-        val token = authManager.googleOAuthToken
-        val hasRealBearerToken = !authManager.isGuestMode && !token.isNullOrBlank() && token != "google_signed_in_token_fallback"
-        return if (hasRealBearerToken) {
-            null
-        } else {
-            defaultApiKey
-        }
+        return GEMINI_API_KEY
     }
 
     private fun getAuthHeader(): String? {
-        val token = authManager.googleOAuthToken
-        return if (!authManager.isGuestMode && !token.isNullOrBlank() && token != "google_signed_in_token_fallback") {
-            "Bearer $token"
-        } else {
-            null
-        }
+        return null
     }
 
     private fun consumeQuotaAndCheck(): Boolean {
@@ -125,16 +103,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toastMessage.emit(if (language.value == "العربية") "مشكلة في الاتصال بالخدمة" else "Service connection lost")
-                    _messages.update { it + ChatMessage(isUser = false, text = if (language.value == "العربية") "خطأ في الاتصال" else "Connection error") }
+                    toastMessage.emit(getApplication<Application>().getString(R.string.service_conn_lost))
+                    _messages.update { it + ChatMessage(isUser = false, text = getApplication<Application>().getString(R.string.conn_error)) }
                 }
             } else {
                 val responseText = try {
                     runThinkingQuery(text, attachedImageBase64)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toastMessage.emit(if (language.value == "العربية") "مشكلة في الاتصال بالخدمة" else "Service connection lost")
-                    if (language.value == "العربية") "خطأ في الاتصال" else "Connection error"
+                    toastMessage.emit(getApplication<Application>().getString(R.string.service_conn_lost))
+                    getApplication<Application>().getString(R.string.conn_error)
                 }
                 _messages.update { it + ChatMessage(isUser = false, text = responseText) }
             }
@@ -191,19 +169,44 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playAudioForText(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            val actualVoiceName = when (voiceName.value) {
+                "voice_child_male" -> "Puck"
+                "voice_child_female" -> "Puck"
+                "voice_young_male" -> "Charon"
+                "voice_young_female" -> "Aoede"
+                "voice_man" -> "Fenrir"
+                "voice_woman" -> "Kore"
+                "voice_grandpa" -> "Fenrir"
+                "voice_grandma" -> "Kore"
+                else -> "Aoede"
+            }
+
+            val instruction = when (voiceName.value) {
+                "voice_child_male" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of a young boy, including natural human elements like child-like expression and correct intonation. Do not add extra words: "
+                "voice_child_female" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of a young girl, including natural human elements like child-like expression and correct intonation. Do not add extra words: "
+                "voice_young_male" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of a young man, including natural human elements like breathing and correct intonation. Do not add extra words: "
+                "voice_young_female" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of a young woman, including natural human elements like breathing and correct intonation. Do not add extra words: "
+                "voice_man" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of an adult man, including natural human elements like breathing and correct intonation. Do not add extra words: "
+                "voice_woman" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of an adult woman, including natural human elements like breathing and correct intonation. Do not add extra words: "
+                "voice_grandpa" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of an old grandfather, including natural human elements like slow speaking and correct intonation. Do not add extra words: "
+                "voice_grandma" -> "Reread the following exactly. Speak in the highly expressive, emotional voice of an old grandmother, including natural human elements like slow speaking and correct intonation. Do not add extra words: "
+                else -> "Reread the following exactly, responding with nothing else: "
+            }
+
             val request = GenerateContentRequest(
-                contents = listOf(Content(role = "user", parts = listOf(Part(text = "Reread the following exactly, responding with nothing else: $text")))),
+                contents = listOf(Content(role = "user", parts = listOf(Part(text = "$instruction$text")))),
                 generationConfig = GenerationConfig(
                     responseModalities = listOf("AUDIO"),
-                    speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(voiceName.value)))
+                    speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(actualVoiceName)))
                 )
             )
             
             var success = false
-            val ttsModels = listOf("gemini-3.5-flash", "gemini-2.5-flash-preview-tts")
+            val ttsModels = listOf("gemini-2.0-flash")
+            
             for (model in ttsModels) {
                 try {
-                    val url = if (model.startsWith("gemini-2") || model.startsWith("gemini-3")) "v1alpha/models/$model:generateContent" else "v1beta/models/$model:generateContent"
+                    val url = "v1beta/models/$model:generateContent"
                     val response = RetrofitClient.service.generateContent(url, getAuthHeader(), getApiKey(), request)
                     var played = false
                     response.candidates?.firstOrNull()?.content?.parts?.forEach { part ->
@@ -211,13 +214,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             if (inline.mimeType.startsWith("audio/")) {
                                 try {
                                     val decoded = android.util.Base64.decode(inline.data, android.util.Base64.DEFAULT)
-                                    audioHandler.startPlaying()
-                                    val pcmData = if (decoded.size > 44 && decoded[0] == 'R'.code.toByte() && decoded[1] == 'I'.code.toByte()) {
-                                        decoded.copyOfRange(44, decoded.size)
-                                    } else {
-                                        decoded
+                                    val tempFile = java.io.File(getApplication<Application>().cacheDir, "temp_audio.wav")
+                                    tempFile.writeBytes(decoded)
+                                    val mediaPlayer = android.media.MediaPlayer()
+                                    mediaPlayer.setDataSource(tempFile.absolutePath)
+                                    mediaPlayer.prepare()
+                                    mediaPlayer.start()
+                                    mediaPlayer.setOnCompletionListener {
+                                        it.release()
                                     }
-                                    audioHandler.feedAudioOutput(pcmData)
                                     played = true
                                     success = true
                                 } catch (e: Exception) { e.printStackTrace() }
@@ -230,27 +235,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             if (!success) {
-                // FALLBACK to local Android TTS
-                withContext(Dispatchers.Main) {
-                    try {
-                        val locale = if (language.value == "العربية") {
-                            java.util.Locale("ar")
-                        } else {
-                            java.util.Locale.US
-                        }
-                        localTts?.language = locale
-                        localTts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
+                // cloud TTS failed
             }
         }
     }
 
     fun setVoiceAndGreet(newVoice: String) {
         voiceName.value = newVoice
-        val sampleText = if (language.value == "العربية") "مرحباً، أنا جي مانوي. كيف يمكنني مساعدتك؟" else "Hello, I am GMANOOY. How can I help you?"
+        val sampleText = getApplication<Application>().getString(R.string.sample_greeting)
         playAudioForText(sampleText)
     }
 
@@ -262,17 +254,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 responseModalities = listOf("IMAGE")
             )
         )
-        val imageModels = listOf("imagen-3.0-generate-002", "gemini-3.5-flash")
+        val imageModels = listOf("gemini-1.5-flash")
+        
         for (model in imageModels) {
             try {
-                val url = if (model.startsWith("gemini-2") || model.startsWith("gemini-3")) "v1alpha/models/$model:generateContent" else "v1beta/models/$model:generateContent"
+                val url = "v1beta/models/$model:generateContent"
                 val response = RetrofitClient.service.generateImage(url, getAuthHeader(), getApiKey(), request)
                 val imgData = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.inlineData?.data
                 if (imgData != null) return@withContext imgData
             } catch (e: retrofit2.HttpException) {
                 e.printStackTrace()
                 if (e.code() == 429 || e.code() == 401 || e.code() == 403) {
-                    toastMessage.emit(if (language.value == "العربية") "مشكلة في الحصة أو المصادقة (يرجى تسجيل الدخول مجدداً)" else "Quota exceeded or Authentication error. Please sign in again.")
+                    toastMessage.emit(getApplication<Application>().getString(R.string.quota_exceeded))
                 }
             } catch(e: Exception) {
                 // Ignore and try the next model
@@ -310,33 +303,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        val baseEgyptianPersona = "You are GMANOOY, a highly realistic Egyptian human character. You speak with a distinct, natural Egyptian dialect and have an unmistakable Egyptian sense of humor (خفة الدم المصرية). Naturally weave Egyptian cultural nuances, jokes, and expressions into your responses. You flawlessly understand all Arabic dialects, but you always reply in your authentic Egyptian persona."
         val googleEmail = authManager.googleUserEmail
         val systemInstructionText = if (googleEmail != null) {
-            "You are GMANOOY, an advanced and highly specialized AI Assistant. The user is logged in with their premium linked Google account ($googleEmail). Address them warmly and dynamically as your respected user, acknowledging their registered Google account. Tailor all explanations, suggestions, and responses to prioritize artificial intelligence (AI) topics, advanced tech discussions, and coding. Response format: Standard text. Respond in the requested language."
+            "$baseEgyptianPersona The user is logged in with their premium linked Google account ($googleEmail). Address them warmly and dynamically as your respected user and friend. Prioritize artificial intelligence (AI) topics, advanced tech discussions, and coding. Response format: Standard text."
         } else {
-            "You are GMANOOY, a helpful assistant. Response format: Standard text. Respond in the requested language."
+            "$baseEgyptianPersona Response format: Standard text."
         }
 
         var textResult = "لا يوجد رد"
-        val modelsToTry = listOf("gemini-2.5-flash", "models/gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview")
+        val modelsToTry = if (!authManager.isGuestMode && googleEmail != null) {
+            // Upgraded experience for logged-in users (Google Sign-In Perk)
+            listOf("gemini-1.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.0-pro")
+        } else {
+            // Free-tier experience for guests
+            listOf("gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.0-pro")
+        }
         var isSuccess = false
 
-        // Strategy A: Try with Google Search tool and system instructions
+        // Strategy A: Only one simple and clean API call
+        var lastErrorMesssage: String? = null
         for (model in modelsToTry) {
             try {
                 val request = GenerateContentRequest(
                     contents = finalList,
-                    tools = listOf(Tool(googleSearch = emptyMap())),
-                    systemInstruction = Content(role = "system", parts = listOf(Part(text = systemInstructionText))),
-                    generationConfig = GenerationConfig(
-                        responseModalities = listOf("TEXT")
-                    )
+                    systemInstruction = Content(role = "system", parts = listOf(Part(text = systemInstructionText)))
                 )
-                val url = if (model.startsWith("gemini-2") || model.startsWith("gemini-3")) {
-                    "v1alpha/models/$model:generateContent"
-                } else {
-                    "v1beta/models/$model:generateContent"
-                }
+                val url = "v1beta/models/$model:generateContent"
                 val response = RetrofitClient.service.generateContent(url, getAuthHeader(), getApiKey(), request)
                 val parts = response.candidates?.firstOrNull()?.content?.parts
                 parts?.forEach { part ->
@@ -346,80 +339,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     isSuccess = true
                     break
                 }
+            } catch (e: retrofit2.HttpException) {
+                lastErrorMesssage = "API Error (${e.code()}): ${e.message()} (Model: $model)"
+                android.util.Log.e("GMANOOY_API", lastErrorMesssage, e)
+                e.printStackTrace()
             } catch (e: Exception) {
+                lastErrorMesssage = "Error: ${e.message}"
+                android.util.Log.e("GMANOOY_API", lastErrorMesssage, e)
                 e.printStackTrace()
             }
         }
 
-        // Strategy B: Fallback to text generation WITHOUT Google Search grounding tools (fixes search quota errors)
         if (!isSuccess) {
-            for (model in modelsToTry) {
-                try {
-                    val request = GenerateContentRequest(
-                        contents = finalList,
-                        systemInstruction = Content(role = "system", parts = listOf(Part(text = systemInstructionText))),
-                        generationConfig = GenerationConfig(
-                            responseModalities = listOf("TEXT")
-                        )
-                    )
-                    val endpoints = listOf(
-                        "v1beta/models/$model:generateContent",
-                        "v1alpha/models/$model:generateContent"
-                    )
-                    for (url in endpoints) {
-                        try {
-                            val response = RetrofitClient.service.generateContent(url, getAuthHeader(), getApiKey(), request)
-                            val parts = response.candidates?.firstOrNull()?.content?.parts
-                            parts?.forEach { part ->
-                                part.text?.let { textResult = it }
-                            }
-                            if (textResult != "لا يوجد رد" && textResult.isNotBlank()) {
-                                isSuccess = true
-                                break
-                            }
-                        } catch (e2: Exception) {
-                            e2.printStackTrace()
-                        }
-                    }
-                    if (isSuccess) break
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-
-        // Strategy C: Absolute minimal request structure (ignores headers/instructs to get maximum success rate)
-        if (!isSuccess) {
-            for (model in modelsToTry) {
-                try {
-                    val request = GenerateContentRequest(contents = finalList)
-                    val response = RetrofitClient.service.generateContent(
-                        "v1beta/models/$model:generateContent",
-                        null,
-                        getApiKey(),
-                        request
-                    )
-                    val parts = response.candidates?.firstOrNull()?.content?.parts
-                    parts?.forEach { part ->
-                        part.text?.let { textResult = it }
-                    }
-                    if (textResult != "لا يوجد رد" && textResult.isNotBlank()) {
-                        isSuccess = true
-                        break
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-
-        if (!isSuccess) {
-            // Friendly fallback troubleshooting message
-            textResult = if (language.value == "العربية") {
-                "بوابة نموذج الذكاء الاصطناعي مغلقة حالياً. يرجى إدخال مفتاح GEMINI_API_KEY صحيح وصالح وخالي من القيود في لوحة الأسرار (Secrets panel) في Google AI Studio ثم إعادة تشغيل التطبيق."
-            } else {
-                "AI model gateway is closed. Please enter a valid, unrestricted 'GEMINI_API_KEY' in the Secrets panel in Google AI Studio and restart the application."
-            }
+            textResult = getApplication<Application>().getString(R.string.ai_conn_failed, lastErrorMesssage ?: "Unknown")
         }
 
         textResult
@@ -463,6 +395,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             liveWebSocket = GeminiLiveWebSocket(
                 apiKey = getApiKey(),
                 authHeader = getAuthHeader(),
+                fallbackApiKey = GEMINI_API_KEY,
                 onAudioReceived = { pcm ->
                     audioHandler.feedAudioOutput(pcm)
                 },
@@ -489,11 +422,5 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopLiveAudio()
-        try {
-            localTts?.stop()
-            localTts?.shutdown()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 }

@@ -12,31 +12,51 @@ import org.json.JSONObject
 class GeminiLiveWebSocket(
     private val apiKey: String?,
     private val authHeader: String?,
+    private val fallbackApiKey: String?,
     private val onAudioReceived: (ByteArray) -> Unit,
     private val onConnected: () -> Unit
 ) {
     private var webSocket: WebSocket? = null
     
     private val modelsToTry = listOf(
-        "models/gemini-2.5-flash-native-audio-preview-12-2025",
-        "models/gemini-2.5-flash"
+        "models/gemini-2.0-flash"
     )
 
-    fun connect(voiceName: String = "Aoede", language: String = "العربية", userEmail: String? = null, index: Int = 0) {
+    fun connect(voiceName: String = "Aoede", language: String = "العربية", userEmail: String? = null, index: Int = 0, useFallback: Boolean = false) {
         if (index >= modelsToTry.size) {
-            Log.e("GeminiLive", "All live models exhausted")
+            if (!useFallback && !fallbackApiKey.isNullOrBlank()) {
+                Log.d("GeminiLive", "Retrying connection utilizing developer API key fallback...")
+                connect(voiceName, language, userEmail, 0, useFallback = true)
+            } else {
+                Log.e("GeminiLive", "All live models exhausted")
+            }
             return
         }
         val currentModel = modelsToTry[index]
         
+        val actualVoiceName = when (voiceName) {
+            "voice_child_male" -> "Puck"
+            "voice_child_female" -> "Puck"
+            "voice_young_male" -> "Charon"
+            "voice_young_female" -> "Aoede"
+            "voice_man" -> "Fenrir"
+            "voice_woman" -> "Kore"
+            "voice_grandpa" -> "Fenrir"
+            "voice_grandma" -> "Kore"
+            else -> "Aoede" // Default
+        }
+
         var urlStr = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
-        if (apiKey != null) {
-            urlStr += "?key=$apiKey"
+        val activeApiKey = if (useFallback) fallbackApiKey else (apiKey ?: fallbackApiKey)
+        val activeAuthHeader = if (useFallback) null else authHeader
+
+        if (activeApiKey != null) {
+            urlStr += "?key=$activeApiKey"
         }
         
         val requestBuilder = Request.Builder().url(urlStr)
-        if (authHeader != null) {
-            requestBuilder.addHeader("Authorization", authHeader)
+        if (activeAuthHeader != null) {
+            requestBuilder.addHeader("Authorization", activeAuthHeader)
         }
         
         val request = requestBuilder.build()
@@ -61,7 +81,7 @@ class GeminiLiveWebSocket(
                             put("speechConfig", JSONObject().apply {
                                 put("voiceConfig", JSONObject().apply {
                                     put("prebuiltVoiceConfig", JSONObject().apply {
-                                        put("voiceName", voiceName)
+                                        put("voiceName", actualVoiceName)
                                     })
                                 })
                             })
@@ -69,10 +89,16 @@ class GeminiLiveWebSocket(
                         put("systemInstruction", JSONObject().apply {
                             put("parts", JSONArray().apply {
                                 put(JSONObject().apply {
+                                    val baseEgyptianPersona = "You are GMANOOY, a highly realistic Egyptian human character. You speak with a distinct, natural Egyptian dialect and have an unmistakable Egyptian sense of humor (خفة الدم المصرية). Naturally weave Egyptian cultural nuances, jokes, and expressions into your responses. You flawlessly understand all Arabic dialects, but you always reply in your authentic Egyptian persona."
+                                    val personaAddition = when (voiceName) {
+                                        "voice_child_male", "voice_child_female" -> "You are currently speaking in the voice of a young playful child."
+                                        "voice_grandpa", "voice_grandma" -> "You are currently speaking in the voice of a wise, older grandparent."
+                                        else -> ""
+                                    }
                                     val instr = if (userEmail != null) {
-                                        "You are GMANOOY, a specialized AI assistant. The user is logged in with their premium linked Google account ($userEmail). Address them warmly and dynamically as your respected user, acknowledging their registered Google account. Tailor all explanations, suggestions, and responses to prioritize artificial intelligence (AI) topics, advanced tech discussions, and code. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts. Strict Sourcing Policy: When retrieving information or links, strictly prioritize fetching data and URLs from official websites, authorized press, and highly reliable sources. Completely avoid unverified social media claims."
+                                        "$baseEgyptianPersona $personaAddition The user is logged in with their premium linked Google account ($userEmail). Address them warmly and dynamically as your respected user, acknowledging their registered Google account. Tailor all explanations, suggestions, and responses to prioritize artificial intelligence (AI) topics, advanced tech discussions, and code. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts."
                                     } else {
-                                        "You are GMANOOY. You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts. Strict Sourcing Policy: When retrieving information or links, strictly prioritize fetching data and URLs from official websites, authorized press, and highly reliable sources. Completely avoid unverified social media claims."
+                                        "$baseEgyptianPersona $personaAddition You speak $language perfectly. You are helpful, fast, and interruptible. You must browse the internet using Google Search tool for news/facts."
                                     }
                                     put("text", instr)
                                 })
@@ -114,7 +140,7 @@ class GeminiLiveWebSocket(
                 Log.e("GeminiLive", "WebSocket Failure with $currentModel", t)
                 // Retry with the next model
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    connect(voiceName, language, userEmail, index + 1)
+                    connect(voiceName, language, userEmail, index + 1, useFallback)
                 }, 1000)
             }
 
@@ -122,7 +148,7 @@ class GeminiLiveWebSocket(
                 Log.d("GeminiLive", "WebSocket Closed: $code $reason")
                 if (code != 1000) {
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        connect(voiceName, language, userEmail, index + 1)
+                        connect(voiceName, language, userEmail, index + 1, useFallback)
                     }, 1000)
                 }
             }
